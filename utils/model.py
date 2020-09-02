@@ -89,10 +89,13 @@ class Model(ABC):
 	
 	def useCUDA(self):
 		# set CUDA as the preferable backend and target
-		#todo: check if it work on Tegra
-		print("[INFO] setting preferable backend and target to GPU and CUDA...")
-		self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-		self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+		#todo: with no gpu error occour
+		if cv2.cuda.getCudaEnabledDeviceCount() > 0:
+			print("[INFO] setting preferable backend and target to GPU and CUDA...")
+			self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+			self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+		else: 
+			print("[WARNING] tried to setup a GPU backend but no GPU found, CPU will be used.")
 
 ################################################################################################################
 ############################     Object Detection         ######################################################
