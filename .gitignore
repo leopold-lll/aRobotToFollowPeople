@@ -1,3 +1,7 @@
-__pycache__/
+*__pycache__/
 videosOut/
+imagesOut/
 models/
+
+#the partial encodings file
+encodings/*-n*	

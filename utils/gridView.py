@@ -72,32 +72,36 @@ def createGrid(topK: "list of tuples", x: int, y: int, resize=False) -> "image":
 		X and y where (where n=x*y) create the representation grid.
 		Resize can be set if the input images does not have all the same shape.
 	"""
-	queryLabel = topK[0][0]
-	imgs = []
+	if len(topK) < x*y:
+		print("Too small number of elements to create the grid visualization.")
+		return None
+	else:
+		queryLabel = topK[0][0]
+		imgs = []
 
-	hMax = 0
-	wMax = 0
-	for (pos, (label, path)) in enumerate(topK):
-		#for each image: load and draw border
-		img = cv2.imread(path)
-		img = drawBorderAndPos(img, 1 if label==queryLabel else -1, str(pos))
-		imgs.append(img)
+		hMax = 0
+		wMax = 0
+		for (pos, (label, path)) in enumerate(topK):
+			#for each image: load and draw border
+			img = cv2.imread(path)
+			img = drawBorderAndPos(img, 1 if label==queryLabel else -1, str(pos))
+			imgs.append(img)
 		
-		#compute the biggest dimensions
+			#compute the biggest dimensions
+			if resize:
+				#this part is useless with Market-1501 because all the images as the same shape (64x128)
+				(h, w) = img.shape[:2]
+				hMax = max(hMax, h)
+				wMax = max(wMax, w)
+
+		imgs[0] = drawBorderAndPos(imgs[0], 0, "") #color back again the query img
+
 		if resize:
-			#this part is useless with Market-1501 because all the images as the same shape (64x128)
-			(h, w) = img.shape[:2]
-			hMax = max(hMax, h)
-			wMax = max(wMax, w)
-
-	imgs[0] = drawBorderAndPos(imgs[0], 0, "") #color back again the query img
-
-	if resize:
-		filledImgs = []
-		for img in imgs:
-			print(img.shape[:2])
-			filledImgs.append( fill(img, wMax, hMax) )
-		imgs = filledImgs
+			filledImgs = []
+			for img in imgs:
+				print(img.shape[:2])
+				filledImgs.append( fill(img, wMax, hMax) )
+			imgs = filledImgs
 	
-	#effectively compose the grid
-	return( assembleGrid(imgs, x, y) )
+		#effectively compose the grid
+		return( assembleGrid(imgs, x, y) )

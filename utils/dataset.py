@@ -146,8 +146,8 @@ class DatabaseOfEncodings:
 	databasePath = {
 		#classifier: path of all the encodings
 		#The negativePeople dataset contain 518 people/keys, and 10 images/feature vectors for each one, for a total of 5180 imgs
-		"googleNet": "./imagesIn/negativePeople_dataset/googleNet_negativePeople_fullDataset.pkl",
-		"resNet50":  "./imagesIn/negativePeople_dataset/resNet50_negativePeople_fullDataset.pkl"
+		"googleNet": "./encodings/googleNet_negativePeople_fullDataset.pkl",
+		"resNet50":  "./encodings/resNet50_negativePeople_fullDataset.pkl"
 	}
 
 	def __init__(self, classifierType: str="resNet50", returnPath: bool=False):

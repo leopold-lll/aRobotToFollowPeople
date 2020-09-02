@@ -254,11 +254,12 @@ class Follower:
 						print("Query added to negative")
 				else:			# 1=subject
 					subjectFound = True
-					#todo: verify if init is sufficient or re istantiation is needed
+					# reinitialize the tracker. A simple initialization is not sufficient
 					self.tracker = None
 					self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
 					self.tracker.init(frame, (x, y, w, h))
-					#self.tracker.init(frame, (x, y, w, h)) #old version
+
+					# compute subject position
 					subjectPosition = (y+(h//2), x+(w//2))
 					if self.streamOut:
 						colors.append((0, 255, 0)) #BGR format

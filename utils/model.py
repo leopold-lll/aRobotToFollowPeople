@@ -89,7 +89,6 @@ class Model(ABC):
 	
 	def useCUDA(self):
 		# set CUDA as the preferable backend and target
-		#todo: with no gpu error occour
 		if cv2.cuda.getCudaEnabledDeviceCount() > 0:
 			print("[INFO] setting preferable backend and target to GPU and CUDA...")
 			self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
