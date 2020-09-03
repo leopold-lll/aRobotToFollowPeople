@@ -57,6 +57,9 @@ class MyKNN:
 		#print("bestMatch:", bestMatch)
 		return bestMatch
 
+	def elementsInfo(self) -> None:
+		print("len(knn):", len(self.knnLabels), "->", self.knnLabels)
+
 
 
 
@@ -138,16 +141,6 @@ def main():
 	query = createQuery()
 	classifyQuery(cvKnn, skKnn, myKnn, query, 5)
 	plt.show()
-
-	#second round of adding points
-	#Note that myKnn as a different result respect to cvKnn and skKnn 
-	#because it update the knn space with new data and do not simply replace it
-	#cvKnn, skKnn, myKnn = addPoints(cvKnn, skKnn, myKnn, 10)
-	#plt.scatter(query[:,0],query[:,1],80,'g','o')
-	#print("")
-
-	#classifyQuery(cvKnn, skKnn, myKnn, query, 5)
-	#plt.show()
 
 if __name__=="__main__":
 	main()

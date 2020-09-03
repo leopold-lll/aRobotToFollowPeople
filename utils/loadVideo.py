@@ -53,12 +53,12 @@ class LoadVideo:
 			# update the FPS counter
 			self._fps.update()
 
-		#get the new frame
-		if self.startTime is None:
-			self.startTime = datetime.datetime.now()
-
 		#burn old frame to simultate the realtime processing on video file
 		if self.simulateRealtime!=0:
+
+			#get the new frame
+			if self.startTime is None:
+				self.startTime = datetime.datetime.now()
 
 			now = datetime.datetime.now()						#get actual time
 			elapsed = (now-self.startTime).total_seconds()*1000	#millisecond passed from the first frame captured

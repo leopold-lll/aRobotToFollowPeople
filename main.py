@@ -28,7 +28,7 @@ def main() -> None:
 		args["detector"], args["tracker"], args["classifier"], 
 		args["sourceFPS"], args["videoIn"], args["videoOut"], 
 		args["useGPU"], args["showLog"])
-	follower.setHyperparam(args["firstPhase"])
+	follower.setHyperparam(args["firstPhase"], 5)
 
 	while True:
 		end = follower.follow()

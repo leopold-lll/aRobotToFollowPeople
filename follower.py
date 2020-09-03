@@ -14,6 +14,7 @@ from utils.model import showDetections
 class Follower:
 	def setHyperparam(self, 
 			slowStartPhase: int=5000,
+			destFps:		int=10,
 			trackOverDetect:int=10,
 			k:				int=5,
 			driftRatio:		float=0.02,
@@ -24,14 +25,17 @@ class Follower:
 		
 		Parameters: 
 		slowStartPhase  (int): The lenght (in milliseconds) of the first phase.
+		destFps			(int): The fps rate of the output file video.
 		trackOverDetect (int): How many frames contain the loop of 1 detection and the rest track.
 		k 				(int): The K value of knn. K at the moment is a constant value it might be change into a probability or into a list of values with a majority score.
-		driftRatio 	  (float): The multiply factor (pixel/milliseconds) of the drifting during the tracking.
+		driftRatio 	  (float): The multiply factor (pixel/milliseconds) of the drifting during the tracking. The ratio is considered for a 100pixel wide bounding box, and a rescaling to the power of two is done to simulate closer and further person.
 		driftTollerance (int): The initial ammount of the drift value. It's important in case of very small track periods.
 		"""
 
-		self.trackOverDetect = trackOverDetect
+		self.random = 10000 #todo: remove
 		self.slowStartPhase = slowStartPhase
+		self.destFps= destFps
+		self.trackOverDetect = trackOverDetect
 		self.K = k
 
 		#drift control parameters
@@ -122,7 +126,7 @@ class Follower:
 
 		### Load EncodeDatabase
 		self.LABELS = { 0: "negative", 1: "subject" }
-		self.dbEnc = DatabaseOfEncodings(classifierName, returnPath=False)
+		self.dbEnc = DatabaseOfEncodings(classifierName, returnPath=True)
 		#encs = dbEnc.getNEncodings(20)	#usage: get 20 encodings
 
 		### Create KNN classifier
@@ -137,7 +141,7 @@ class Follower:
 		### Init StoreVideo
 		if destVideo is not None:
 			self.destVideo = destVideo
-			self.streamOut = StoreVideo(destVideo, show=self.showSteps, fps=10)
+			self.streamOut = StoreVideo(destVideo, show=self.showSteps, fps=self.destFps)
 
 
 		# check if everything is ok
@@ -186,9 +190,6 @@ class Follower:
 				#normal walkthrough of phase 1
 				detectedPosition = self.__followPhase(frame)
 		
-		if self.showSteps:
-			print("fps:{:.2f}".format(self.streamIn.fps()))
-
 		# update the last known position if it is not the idle one
 		if detectedPosition != self.idlePosition:
 			self.lastKnownPosition = detectedPosition
@@ -205,10 +206,7 @@ class Follower:
 		tuple: The coordinations of the center of the bounding box of the main subject.
 		"""
 		detections = self.detector.detectPeopleOnly(frame)
-		if self.streamOut is not None:
-			showDetections(frame, detections, 0)
-			self.__writeFPS(frame)
-			self.streamOut.addFrame(frame)
+
 	
 		# for logic semplicity the detection in this phase is accepted only if exactly one occours
 		subjectPosition = self.idlePosition
@@ -229,9 +227,20 @@ class Follower:
 
 			#fill the knn space
 			self.knn.trainWithOne(encSubj, 1)	#1=subject(positive)
+			self.random += 1
+			cv2.imwrite("".join(["imagesOut/knnData/", str(self.random), ".jpg"]), box)
 			self.__addOneNegativeToKNN()
 
 			subjectPosition = centerBB(x, y, w, h)	#return the center of the bounding box
+		
+		#draw on the frame output for the user (with both the suggestions below)
+		#NB: it is fundamental to draw on the frame AFTER that the classifier has elaborated the frame itself, or in case of elaboration before is neccessary to draw on a COPY of the frame.
+		#If this do not happen the classifier works on a drawn frame, and it will learn the "user friendly draw" and not the frame
+		if self.streamOut is not None:
+			newFrame = frame.copy()
+			showDetections(newFrame, detections, 0)
+			self.__writeFPS(newFrame)
+			self.streamOut.addFrame(newFrame)
 
 		return subjectPosition	#return the calculated position of the main subject
 
@@ -251,77 +260,84 @@ class Follower:
 		if self.loop%self.trackOverDetect != 0:
 			self.loop += 1
 			if self.showSteps:
-				print("tracking...")
+				print("\ntracking...")
 			(success, box) = self.tracker.update(frame)
 			# check to see if the tracking was a success
 			if success: 
 				#NB: an occlusion might return success=False even if the subject is still in the sight of the camera
 				(x, y, w, h) = [int(v) for v in box]
+				subjectPosition = centerBB(x, y, w, h)
 				self.lastW = w
 
 				if self.streamOut is not None:
 					cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), 2)
-				
-				subjectPosition = centerBB(x, y, w, h)
 
 		#DETECT
-		#todo: manage the case when the leader is classified as negative
+		#todo: manage the case when the leader is classified as negative. how???
 		else:
 			if self.showSteps:
-				print("detecting...")
-			#recognise person into the image
+				#print some info
+				print("\ndetecting...")
+				self.knn.elementsInfo()
+
+			#recognise people into the image
 			detections = self.detector.detectPeopleOnly(frame)
 			
+			#initialaze support lists
+			leadersFound = []
+			features = []
+			labels = []
 			if self.streamOut:
 				colors = []
-			leadersFound = []
 
-			#clac the drift radius tollerance according to the ratio and the period gone
+			#calc the drift radius tollerance according to the ratio, the period gone and the BB size
 			driftPeriod = int((datetime.datetime.now() - self.startDrifting).total_seconds() *1000)
-			driftRadius = int(driftPeriod*self.driftRatio*(self.lastW/100) + self.driftTollerance) 
+			driftRadius = int(driftPeriod*self.driftRatio*((self.lastW/100)**2) + self.driftTollerance) 
 			print("driftRadius:", driftPeriod*self.driftRatio, "*", (self.lastW/100), "+", self.driftTollerance, "=", driftRadius)
-			for (i, (_label, _prob, (x, y, w, h))) in enumerate(detections):
-				#process each detection as a feature vector (used here as a point for knn)
-				box = frame[y:y+h, x:x+w]
-				featuresPoint = self.classifier.feed(box)
 
-				#filter out too far detection according to the drift radius
-				dist = spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h))
-				if driftRadius < dist:
+			#process each detection
+			for (i, (_classLabel, _prob, (x, y, w, h))) in enumerate(detections):
+				#convert a detection (aka BB) to feature vector
+				box = frame[y:y+h, x:x+w] 
+				featureVector = self.classifier.feed(box)
+
+				#filter out detection too far away according to the drift radius
+				drift = spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h))
+				if driftRadius < drift:
+					#person too far away
+					label = 0
 					if self.showSteps:
 						print("\n\ndetection out of bound of drift radius. Set as negative")
 						print("driftRadius:", driftRadius)
-						print("spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)):", dist)
+						print("spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)):", drift)
 						print("self.lastKnownPosition:", self.lastKnownPosition)
 						print("centerBB(x, y, w, h):", centerBB(x, y, w, h))
 						print("\n")
-					label = 0
 				else:
 					if self.showSteps:
 						print("Choice with KNN")
-					label = self.knn.predict(featuresPoint, k=self.K)
+					#add the featureVector to KNN as a point
+					label = self.knn.predict(featureVector, k=self.K)
 
-				#choose output color according to the label
-				if self.streamOut:
-						colors.append((0, 0, 255)) #BGR format
-				if label==0:	# 0=negative
-					if self.showSteps:
-						print("featuresPoint added to negative")
-					self.knn.trainWithOne(featuresPoint, 0) #add to knn
-				else:			# 1=leader
+				if label==1:	# 1=leader
 					leadersFound.append(i)
 
+				#update support lists
+				features.append(featureVector)
+				labels.append(label)
+
+			# Manage the case of multiple leaders detected (only one can exist)
+			leader = None
 			if len(leadersFound) == 0:
-				leader = None
 				if self.showSteps:
 					print("No leader detected...")
-			#todo: move the multiple leaders check to a function
-			elif len(leadersFound) > 1:
+			elif len(leadersFound) == 1:
+				leader = leadersFound[0]
+			else:
 				if self.showSteps:
 					print("More than one leader detected...")
 
-				#choose the closer leader to the last known position.
-				#that one will be chosen as the leader
+				#choose the closer leader to the last known position as the official one
 				bestI = -1
 				bestDist = None
 				for i in leadersFound:
@@ -330,48 +346,57 @@ class Follower:
 					bestDist = dist if bestDist is None else min(bestDist, dist)
 					if dist==bestDist:
 						bestI = i
+				#remember the i with the lowest distance
 				leader = bestI
-			else:
-				leader = leadersFound[0]
 
-			if leader is not None:
-				_, _, (x, y, w, h) = detections[leader]
+			#for each person previously found (now identified by featureVector and label)
+			for (fv, l) in zip(features, labels):
+				#choose output color according to the label
+				self.knn.trainWithOne(fv, l) #add to knn
+				self.random += 1
+				cv2.imwrite("".join(["imagesOut/knnData/", "neg-" if l==0 else "", str(self.random), ".jpg"]), box)
+				if self.streamOut is not None:
+					colors.append( (0, 0, 255) if l==0 else (0, 255, 0) ) #BGR format
 
-				# reinitialize the tracker. A simple initialization is not sufficient
-				self.tracker = None
-				self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
-				self.tracker.init(frame, (x, y, w, h))
+				if l==0: # 0=negative 
+					if self.showSteps:
+						print("featureVector added to negative")
 
-				# compute subject position
-				subjectPosition = centerBB(x, y, w, h)
+				#thanks to leader selection exist exactly one leader (loop enter here only once)
+				else:	 # 1=positive
+					_, _, (x, y, w, h) = detections[leader]
+				
+					#leader found: next frame will be used for tracking
+					self.loop = 1
+					self.startDrifting = datetime.datetime.now()
+					# reinitialize the tracker. A simple initialization is not sufficient it need to be re-istantiated
+					self.tracker = None
+					self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
+					self.tracker.init(frame, (x, y, w, h))
 
+					# compute subject position
+					subjectPosition = centerBB(x, y, w, h)
 
-				#tmp: compute confidence distance from last tracked position to first detect position
-				dist = spatial.distance.euclidean(self.lastKnownPosition, subjectPosition)
+					# add one precomputed negative sample to KNN, because only the leader exist. 
+					# the goal is to balance positive and negative.
+					if len(labels)==1:
+						self.__addOneNegativeToKNN()
 
-				with open("imagesOut/confidenceDist.txt", 'a') as f:
-					f.write("{:.2f}".format(dist))
-					f.write("\t")
-					f.write(str(driftPeriod))	#elapsed millisec
-					f.write("\n")
-				self.startDrifting = datetime.datetime.now() #tmp (next round drift period)
+					#tmp: compute confidence distance from last tracked position to first detect position
+					if self.showSteps:
+						dist = spatial.distance.euclidean(self.lastKnownPosition, subjectPosition)
 
+						with open("imagesOut/confidenceDist.txt", 'a') as f:
+							f.write("{:.2f}".format(dist))
+							f.write("\t")
+							f.write(str(driftPeriod))	#elapsed millisec
+							f.write("\t")
+							f.write(str(int(w)))		#width of BB
+							f.write("\n")
 
-				if self.streamOut:
-					colors[i] = (0, 255, 0) #BGR format
-
-
-
-			#todo: add even if a negative already occour?
-			#add one negative (even if n detections, only one can be the subject)
-			if leader is not None: #aka len>0
-				self.loop = 1
-				# I add a precomputed negative sample only if there is only the leader in the frame
-				# to balance positive and negative.
-				if len(detections)<=1:
-					self.__addOneNegativeToKNN()
 			
 			if self.streamOut is not None:
+				#NB: the draw on the frame MUST be done after the classifier has analised it, if not tests will be compromised
 				showDetections(frame, detections, 0, colors)
 				cv2.circle(frame, self.lastKnownPosition, driftRadius, color=(0, 255, 255), thickness=1)
 				cv2.circle(frame, self.lastKnownPosition, 5, color=(0, 0, 0), thickness=2)
@@ -384,7 +409,11 @@ class Follower:
 
 	def __addOneNegativeToKNN(self) -> None:
 		""" Get a precomputed encoding to fill the KNN space in parallel with positive and negative samples. """
-		encNeg, _ = self.dbEnc.getNEncodings(1)
+		encNeg, _paths = self.dbEnc.getNEncodings(1)
+		#todo: check correctness of knn
+		print(_paths[0][1:])
+		img = cv2.imread(_paths[0][1:])
+		cv2.imwrite("".join(["imagesOut/knnData/", _paths[0].split("/")[-1]]), img)
 		self.knn.trainWithOne(encNeg[0],  0)	#0=negative
 
 	def __writeFPS(self, frame: "Mat") -> None:
