@@ -1,3 +1,4 @@
+from scipy import spatial
 import datetime
 import cv2
 
@@ -11,6 +12,34 @@ from utils.knn import MyKNN
 from utils.model import showDetections
 
 class Follower:
+	def setHyperparam(self, 
+			slowStartPhase: int=5000,
+			trackOverDetect:int=10,
+			k:				int=5,
+			driftRatio:		float=0.02,
+			driftTollerance:int=30
+			):
+		""" 
+		This function aim to set all the hyperparams that control the logic of the algorithm.
+		
+		Parameters: 
+		slowStartPhase  (int): The lenght (in milliseconds) of the first phase.
+		trackOverDetect (int): How many frames contain the loop of 1 detection and the rest track.
+		k 				(int): The K value of knn. K at the moment is a constant value it might be change into a probability or into a list of values with a majority score.
+		driftRatio 	  (float): The multiply factor (pixel/milliseconds) of the drifting during the tracking.
+		driftTollerance (int): The initial ammount of the drift value. It's important in case of very small track periods.
+		"""
+
+		self.trackOverDetect = trackOverDetect
+		self.slowStartPhase = slowStartPhase
+		self.K = k
+
+		#drift control parameters
+		self.driftRatio = driftRatio			#measure of pixel/millisecond of drifting effect
+		self.driftTollerance = driftTollerance	#tollerace on small driftPeriods
+		self.lastW = 100	#scaling factor according to BB width (one dimension, basecase=100) to simulate depth 
+		# I assume that every millisec the measure drift by x pixel from real position
+		# todo: this measure may be influenced even from the BB avg size that mainly map the subject distance.
 
 	def __init__(self, 
 			  detectorName:   str="ssd",
@@ -21,7 +50,6 @@ class Follower:
 			  sourceVideo:    str="0", 
 			  destVideo:	  str=None,
 
-			  slowStartPhase: int=5000,
 			  useCuda:        bool=False,
 			  showSteps:	  bool=False
 			  ):
@@ -43,13 +71,17 @@ class Follower:
 		showSteps (bool):		Flag to show additional information useful for debug, set to False for high performances.ù
 								The processed frames are shown only if showSteps=True and destVideo is not None
 		"""
+		self.setHyperparam()
 		self.startTime = None
-		self.slowStartPhase = slowStartPhase
 		self.phase = 0
 		self.useCuda = useCuda
 		self.loop = 0
 		self.detected = False
 		self.showSteps = showSteps
+
+		#positions of the robot in the image
+		self.idlePosition = (-1, -1)
+		self.lastKnownPosition = None	#A tuple containing the last measured position of the robot
 
 		### Load objDetection
 		self.detector = None		# YOLOv3 or MobileNetSSD
@@ -136,6 +168,7 @@ class Follower:
 					#set the startup
 					#todo: consider that the first run require almost 1.5 sec...
 					self.startTime = datetime.datetime.now()
+					self.startDrifting = self.startTime
 
 				# compute elapsed time
 				elapsed = int((datetime.datetime.now() - self.startTime).total_seconds() *1000)
@@ -144,6 +177,7 @@ class Follower:
 				#if it is the case perform change of phase
 				if elapsed > self.slowStartPhase:
 					self.phase = 1
+
 
 				#normal walkthrough of phase 0
 				detectedPosition = self.__slowStartPhase(frame)
@@ -154,6 +188,10 @@ class Follower:
 		
 		if self.showSteps:
 			print("fps:{:.2f}".format(self.streamIn.fps()))
+
+		# update the last known position if it is not the idle one
+		if detectedPosition != self.idlePosition:
+			self.lastKnownPosition = detectedPosition
 		return detectedPosition
 
 
@@ -168,12 +206,12 @@ class Follower:
 		"""
 		detections = self.detector.detectPeopleOnly(frame)
 		if self.streamOut is not None:
-			newFrame = showDetections(frame, detections, 0)
-			self.__writeFPS(newFrame)
-			self.streamOut.addFrame(newFrame)
+			showDetections(frame, detections, 0)
+			self.__writeFPS(frame)
+			self.streamOut.addFrame(frame)
 	
 		# for logic semplicity the detection in this phase is accepted only if exactly one occours
-		subjectPosition = (-1, -1)
+		subjectPosition = self.idlePosition
 		nDetections = len(detections)
 		if nDetections == 0:
 			if self.showSteps:
@@ -192,9 +230,8 @@ class Follower:
 			#fill the knn space
 			self.knn.trainWithOne(encSubj, 1)	#1=subject(positive)
 			self.__addOneNegativeToKNN()
-			# todo: consider to add more negative or to create custom negative sample
 
-			subjectPosition = (y+(h//2), x+(w//2))	#return the center of the bounding box
+			subjectPosition = centerBB(x, y, w, h)	#return the center of the bounding box
 
 		return subjectPosition	#return the calculated position of the main subject
 
@@ -208,11 +245,10 @@ class Follower:
 		Returns: 
 		tuple: The coordinations of the center of the bounding box of the main subject.
 		"""
-		subjectPosition = (-1, -1)
+		subjectPosition = self.idlePosition
 		
-		#todo: choose a better rate between detect and track
-		#track once every 10 frames
-		if self.loop%10 != 0:
+		#TRACK once every x frames
+		if self.loop%self.trackOverDetect != 0:
 			self.loop += 1
 			if self.showSteps:
 				print("tracking...")
@@ -221,14 +257,15 @@ class Follower:
 			if success: 
 				#NB: an occlusion might return success=False even if the subject is still in the sight of the camera
 				(x, y, w, h) = [int(v) for v in box]
+				self.lastW = w
 
 				if self.streamOut is not None:
 					cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), 2)
-					self.__writeFPS(frame)
-					self.streamOut.addFrame(frame)
 				
-				subjectPosition = (y+(h//2), x+(w//2))
+				subjectPosition = centerBB(x, y, w, h)
 
+		#DETECT
+		#todo: manage the case when the leader is classified as negative
 		else:
 			if self.showSteps:
 				print("detecting...")
@@ -237,44 +274,111 @@ class Follower:
 			
 			if self.streamOut:
 				colors = []
-			subjectFound = False
-			#todo: add a method to allow only one positive subject per frame
-			for (label, prob, (x, y, w, h)) in detections:
-				#process each detection as a query to predict with knn the associated label.
+			leadersFound = []
+
+			#clac the drift radius tollerance according to the ratio and the period gone
+			driftPeriod = int((datetime.datetime.now() - self.startDrifting).total_seconds() *1000)
+			driftRadius = int(driftPeriod*self.driftRatio*(self.lastW/100) + self.driftTollerance) 
+			print("driftRadius:", driftPeriod*self.driftRatio, "*", (self.lastW/100), "+", self.driftTollerance, "=", driftRadius)
+			for (i, (_label, _prob, (x, y, w, h))) in enumerate(detections):
+				#process each detection as a feature vector (used here as a point for knn)
 				box = frame[y:y+h, x:x+w]
-				query = self.classifier.feed(box)
-				#todo: size of knn neighbours (always 5???)
-				label = self.knn.predict(query, k=5)
+				featuresPoint = self.classifier.feed(box)
+
+				#filter out too far detection according to the drift radius
+				dist = spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h))
+				if driftRadius < dist:
+					if self.showSteps:
+						print("\n\ndetection out of bound of drift radius. Set as negative")
+						print("driftRadius:", driftRadius)
+						print("spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)):", dist)
+						print("self.lastKnownPosition:", self.lastKnownPosition)
+						print("centerBB(x, y, w, h):", centerBB(x, y, w, h))
+						print("\n")
+					label = 0
+				else:
+					if self.showSteps:
+						print("Choice with KNN")
+					label = self.knn.predict(featuresPoint, k=self.K)
 
 				#choose output color according to the label
-				if label==0:	# 0=negative
-					if self.streamOut:
+				if self.streamOut:
 						colors.append((0, 0, 255)) #BGR format
+				if label==0:	# 0=negative
 					if self.showSteps:
-						print("Query added to negative")
-				else:			# 1=subject
-					subjectFound = True
-					# reinitialize the tracker. A simple initialization is not sufficient
-					self.tracker = None
-					self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
-					self.tracker.init(frame, (x, y, w, h))
+						print("featuresPoint added to negative")
+					self.knn.trainWithOne(featuresPoint, 0) #add to knn
+				else:			# 1=leader
+					leadersFound.append(i)
 
-					# compute subject position
-					subjectPosition = (y+(h//2), x+(w//2))
-					if self.streamOut:
-						colors.append((0, 255, 0)) #BGR format
+			if len(leadersFound) == 0:
+				leader = None
+				if self.showSteps:
+					print("No leader detected...")
+			#todo: move the multiple leaders check to a function
+			elif len(leadersFound) > 1:
+				if self.showSteps:
+					print("More than one leader detected...")
 
-				self.knn.trainWithOne(query, label) #add to knn
+				#choose the closer leader to the last known position.
+				#that one will be chosen as the leader
+				bestI = -1
+				bestDist = None
+				for i in leadersFound:
+					_, _, (x, y, w, h) = detections[i]
+					dist = spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)) 
+					bestDist = dist if bestDist is None else min(bestDist, dist)
+					if dist==bestDist:
+						bestI = i
+				leader = bestI
+			else:
+				leader = leadersFound[0]
 
+			if leader is not None:
+				_, _, (x, y, w, h) = detections[leader]
+
+				# reinitialize the tracker. A simple initialization is not sufficient
+				self.tracker = None
+				self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
+				self.tracker.init(frame, (x, y, w, h))
+
+				# compute subject position
+				subjectPosition = centerBB(x, y, w, h)
+
+
+				#tmp: compute confidence distance from last tracked position to first detect position
+				dist = spatial.distance.euclidean(self.lastKnownPosition, subjectPosition)
+
+				with open("imagesOut/confidenceDist.txt", 'a') as f:
+					f.write("{:.2f}".format(dist))
+					f.write("\t")
+					f.write(str(driftPeriod))	#elapsed millisec
+					f.write("\n")
+				self.startDrifting = datetime.datetime.now() #tmp (next round drift period)
+
+
+				if self.streamOut:
+					colors[i] = (0, 255, 0) #BGR format
+
+
+
+			#todo: add even if a negative already occour?
 			#add one negative (even if n detections, only one can be the subject)
-			if subjectFound:
+			if leader is not None: #aka len>0
 				self.loop = 1
-				self.__addOneNegativeToKNN()
+				# I add a precomputed negative sample only if there is only the leader in the frame
+				# to balance positive and negative.
+				if len(detections)<=1:
+					self.__addOneNegativeToKNN()
 			
 			if self.streamOut is not None:
-				newFrame = showDetections(frame, detections, 0, colors)
-				self.__writeFPS(newFrame)
-				self.streamOut.addFrame(newFrame)
+				showDetections(frame, detections, 0, colors)
+				cv2.circle(frame, self.lastKnownPosition, driftRadius, color=(0, 255, 255), thickness=1)
+				cv2.circle(frame, self.lastKnownPosition, 5, color=(0, 0, 0), thickness=2)
+
+		if self.streamOut is not None:
+			self.__writeFPS(frame)
+			self.streamOut.addFrame(frame)
 
 		return subjectPosition	#return the calculated position of the main subject
 
@@ -287,4 +391,10 @@ class Follower:
 		""" Add the fps rate (as a text) on the given frame. """
 		text = "fps: {:.2f}".format(self.streamIn.fps())
 		cv2.putText(frame, text, (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (2555, 255, 255), 2)
-		#return frame
+
+def centerBB(x, y, w, h):
+	return( (x+(w//2), y+(h//2)) )
+
+#def swapXY(p):
+#	return( (p[1], p[0]) if p is not None else None )
+	

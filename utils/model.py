@@ -273,21 +273,18 @@ class GoogleNet(Model):
 
 ################################################################################################################
 
-def showDetections(image: "Mat", detections: "list of list", waitTime: int=1, colors: "cv::viz::Color"=[(255, 0, 0)]) -> "image":
+def showDetections(image: "Mat", detections: "list of list", waitTime: int=1, colors: "cv::viz::Color"=[(255, 0, 0)]) -> None:
 	""" 
 		This function draw on the input image rectangles of different colors according to the detections.
 		Parameters: 
-		image (Mat): The image to be elaborated
+		image (Mat): The image to be elaborated, will contain the return value
 		detections (list of list): The coordination of the detected bounding boxes
 		waitTime (int): the millisecond that each shown frame will last on the video. If 0, frames are not shown.
 		colors (list of tuples): The colors assoziated with each detection.
 		fps: ... todo: to add
-  
-		Returns: 
-		image (Mat): The elaborated frame with all the detections, and text on it.
 	"""
+
 	# ensure at least one detection exists
-	newImg = image.copy()
 	if len(detections) > 0:
 		#if len(detections) > 1:
 		#	print("\nMore than one detection:")
@@ -307,12 +304,13 @@ def showDetections(image: "Mat", detections: "list of list", waitTime: int=1, co
 				color = colors[i]
 
 			# draw a bounding box rectangle and label on the image
-			cv2.rectangle(newImg, (x, y), (x+w, y+h), color, 2)
+			cv2.rectangle(image, (x, y), (x+w, y+h), color, 2)
+			cv2.circle(image, (x+(w//2), y+(h//2)), radius=5, color=color, thickness=2)
+
 
 			text = "{}: {:.2f}%".format(label, 100*prob)
-			cv2.putText(newImg, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+			cv2.putText(image, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
 	if waitTime!=0:
-		cv2.imshow("image", newImg)
+		cv2.imshow("image", image)
 		cv2.waitKey(waitTime)
-	return newImg
