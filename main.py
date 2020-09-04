@@ -1,5 +1,7 @@
 # USAGE:
-# python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/out --videoIn videosIn/shelfy_dataset/v01-basecase.mp4 --showLog --firstPhase 5000 --useGPU
+# python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/out --videoIn videosIn/shelfy_dataset/v01-basecase.mp4 --showLog --firstPhase 5000 --useGPU --imgsOut imagesOut/knnData/
+# python main.py --detector ssd --tracker csrt --classifier resNet50 --videoIn videosIn\shelfy_dataset\v04-simpleIntersection.mp4
+# python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/webcam --firstPhase 10000 --imgsOut imagesOut/knnData/ --videoIn 0 --showLog
 import argparse
 from follower import Follower
 
@@ -13,6 +15,7 @@ def parseArguments() -> None:
 	ap.add_argument("-s", "--sourceFPS",	type=int,	default=15,			help="The FPS rate of the given input video.")
 	ap.add_argument("-v", "--videoIn",		type=str,	required=True,		help="The path to the input video.")
 	ap.add_argument("-o", "--videoOut",		type=str,	default=None,		help="The path to the output video (no extension).")
+	ap.add_argument("-i", "--imgsOut",		type=str,	default=None,		help="The path to the output folder for images (log of knn training).")
 
 	ap.add_argument("-g", "--useGPU", action="store_true", default=False,	help="A flag to use a GPU for the DNNs.")
 	ap.add_argument("-l", "--showLog",action="store_true", default=False,	help="A flag to use show the code log during execution. Set to False to execute with high performances.")
@@ -26,16 +29,20 @@ def main() -> None:
 
 	follower = Follower(
 		args["detector"], args["tracker"], args["classifier"], 
-		args["sourceFPS"], args["videoIn"], args["videoOut"], 
-		args["useGPU"], args["showLog"])
-	follower.setHyperparam(args["firstPhase"], 5)
+		args["sourceFPS"], args["videoIn"], args["useGPU"])
+
+	follower.setHyperparam(slowStartPhase=args["firstPhase"], k=5, driftRatio=0.03)
+	follower.setLogParam(showLog=args["showLog"], destImgs=args["imgsOut"], destVideo=args["videoOut"], destFps=5)
 
 	while True:
 		end = follower.follow()
 		if end is None:
 			break
+		elif end==(-1, -1):
+			print("Unknown position...")
 		else:
-			print("Subject position:", end)
+			print("Leader position:", end)
 
 if __name__=="__main__":
 	main()
+	
