@@ -2,7 +2,8 @@
 # --detector ssd --tracker csrt --classifier resNet50
 # python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/out --videoIn videosIn/shelfy_dataset/v01-basecase.mp4 --showLog --firstPhase 5000 --useGPU --imgsOut imagesOut/knnData/
 # python main.py --detector ssd --tracker csrt --classifier resNet50 --videoIn videosIn\shelfy_dataset\v04-simpleIntersection.mp4
-# python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/webcam --firstPhase 10000 --imgsOut imagesOut/knnData/ --videoIn 0 --showLog
+# python main.py --detector ssd --tracker kcf --classifier googleNet --videoOut videosOut/webcam --firstPhase 10000  --videoIn 0 --showLog
+# --imgsOut imagesOut/knnData/tmp/
 import argparse
 from follower import Follower
 
@@ -21,6 +22,7 @@ def parseArguments() -> None:
 	ap.add_argument("-g", "--useGPU", action="store_true", default=False,	help="A flag to use a GPU for the DNNs.")
 	ap.add_argument("-l", "--showLog",action="store_true", default=False,	help="A flag to use show the code log during execution. Set to False to execute with high performances.")
 	ap.add_argument("-f", "--firstPhase",	type=int,	default=5000,		help="Lenght in millisecond of the first phase (learn the subject).")
+	ap.add_argument("-r", "--ratioToverD",	type=int,	default=10,			help="The ratio of how many tracked frames are processed for a single detection.")
 	args = vars(ap.parse_args())
 	return(args)
 
@@ -32,8 +34,8 @@ def main() -> None:
 		args["detector"], args["tracker"], args["classifier"], 
 		args["sourceFPS"], args["videoIn"], args["useGPU"])
 
-	follower.setHyperparam(slowStartPhase=args["firstPhase"], k=5, driftRatio=0.03)
-	follower.setLogParam(showLog=args["showLog"], destImgs=args["imgsOut"], destVideo=args["videoOut"], destFps=5)
+	follower.setHyperparam(slowStartPhase=args["firstPhase"], trackOverDetect=args["ratioToverD"], k=10, driftRatio=0.03, driftTollerance=100)
+	follower.setLogParam(showLog=args["showLog"], destImgs=args["imgsOut"], destVideo=args["videoOut"], destFps=10)
 
 	while True:
 		end = follower.follow()

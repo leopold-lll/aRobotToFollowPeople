@@ -286,16 +286,11 @@ def showDetections(image: "Mat", detections: "list of list", waitTime: int=1, co
 		image (Mat): The image to be elaborated, will contain the return value
 		detections (list of list): The coordination of the detected bounding boxes
 		waitTime (int): the millisecond that each shown frame will last on the video. If 0, frames are not shown.
-		colors (list of tuples): The colors assoziated with each detection.
-		fps: ... todo: to add
+		colors (list of tuples): The colors associated with each detection in BGR format.
 	"""
 
 	# ensure at least one detection exists
 	if len(detections) > 0:
-		#if len(detections) > 1:
-		#	print("\nMore than one detection:")
-		#	print(detections)
-		#	print(colors)
 
 		color = colors[0]
 

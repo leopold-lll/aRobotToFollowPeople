@@ -45,17 +45,17 @@ class Follower:
 			showLog:	bool=False,
 			destImgs:	str=None,
 			destVideo:	str=None,
-			destFps:	int=5
+			destFps:	int=10
 			):
 		""" 
 		This function aim to set all the hyperparams that control the logic of the algorithm.
 		
 		Parameters: 
-		showLog (bool):	Flag to show additional information useful for debug, set to False for high performances.
+		showLog	  (bool):	Flag to show additional information useful for debug, set to False for high performances.
 							The processed frames are shown only if showLog=True and destVideo is not None
-		destImgs	  (str):	Path to the output folder for images. If None no images output will be generated.
+		destImgs  (str):	Path to the output folder for images. If None no images output will be generated.
 		destVideo (str):	Path to the output video file. If None no video output will be generated.
-		destFps	  (int):	The fps rate of the output file video.
+		destFps	  (int):	The fps rate of the output file video. Note that FPS lower than 10 are not well generated and small temporal loops are created.
 		"""
 
 		self.showLog = showLog	
@@ -174,12 +174,14 @@ class Follower:
 		- follow phase (2): the algorithm with the accumulated knowledge, track the subject in realtime
 
 		Returns: 
-		tuple: The coordinations of the centre of the bounding box of the main subject.
+		tuple:  The coordinations of the centre of the bounding box of the main subject.
+				(-1, -1) is the default position. If None is returned means that the tracker should be stopped.
 		"""
 
 		#grab a frame from the input video/camera
 		frame = self.streamIn.read()
 		detectedPosition = None
+		qPressed = False
 
 		if frame is not None:
 			#manage the slowStart phase (first k milliseconds)
@@ -192,23 +194,26 @@ class Follower:
 				# compute elapsed time
 				elapsed = int((datetime.datetime.now() - self.startTime).total_seconds() *1000)
 				if self.showLog:
-					print("elapsed", elapsed/1000, "seconds")
+					print("\telapsed", elapsed/1000, "seconds")
 				#if it is the case perform change of phase
 				if elapsed > self.slowStartPhase:
 					self.phase = 2
 
 				#normal walkthrough of phase 1
-				detectedPosition = self.__slowStartPhase(frame)
+				(detectedPosition, qPressed) = self.__slowStartPhase(frame)
 		
 			else: #phase 2=follow phase
 				#normal walkthrough of phase 2
-				detectedPosition = self.__trackLeaderPhase(frame)
+				(detectedPosition, qPressed) = self.__trackLeaderPhase(frame)
 		
 		# update the last known position if it is not the idle one
 		if detectedPosition != self.idlePosition:
 			self.lastKnownPosition = detectedPosition
 
-		return detectedPosition
+		if qPressed:
+			return None
+		else:
+			return detectedPosition
 
 
 	def __slowStartPhase(self, frame: "image") -> "point: tuple":
@@ -218,9 +223,10 @@ class Follower:
 		frame (Mat): The image to be processed
   
 		Returns: 
-		tuple: The coordinations of the center of the bounding box of the main subject.
+		tuple: The coordinations of the center of the bounding box of the main subject, eventually the default position: (-1, -1).
+		qPressed: A boolean value indicating if the user has pressed 'q' to end the tracker.
 		"""
-
+		qPressed = False
 		detections = self.detector.detectPeopleOnly(frame)
 	
 		# for logic semplicity the detection in this phase is accepted only if exactly one occours
@@ -230,13 +236,23 @@ class Follower:
 			if self.showLog:
 				print("[INFO] no detections found.")
 
-		elif nDetections > 1:
-			if self.showLog:
-				print("[INFO] found", nDetections, "and not 1.")
-
 		else:
+			if nDetections==1:
+				leader = detections.pop(0)
+			else:
+				if self.showLog:
+					print("[INFO] found", nDetections, "and not 1.")
+			
+				#chose who is the leader recognised by the bounding box with the biggest area (w*h)
+				areas = []
+				for box in detections:
+					(_, _, w, h) = box[2]
+					areas.append(w*h)
+				#the pop move the leader in the variable and leave the list without it
+				leader = detections.pop(argmax(areas))
+
 			#extract the feature space codification of the detected bounding box (BB)
-			(x, y, w, h) = detections[0][2]
+			(x, y, w, h) = leader[2]
 			box = frame[y:y+h, x:x+w]
 			encSubj = self.classifier.feed(box)
 
@@ -250,16 +266,17 @@ class Follower:
 				cv2.imwrite("".join([self.destImgs, str(self.random), ".jpg"]), box)
 
 		
-		#draw on the frame output for the user (read both the suggestions below)
-		#NB: it is fundamental to draw on the frame AFTER that the classifier has elaborated the frame itself, or, in case of elaboration before, is neccessary to draw on a COPY of the frame.
-		#If this do not happen the classifier works on the drawn frame, and it will learn the "user friendly draw" and not the frame itself
-		if self.streamOut is not None:
-			newFrame = frame.copy()
-			showDetections(newFrame, detections, 0)
-			self.__writeFPS(newFrame)
-			self.streamOut.addFrame(newFrame)
+			#draw on the frame output for the user (read both the suggestions below)
+			#NB: it is fundamental to draw on the frame AFTER that the classifier has elaborated the frame itself, or, in case of elaboration before, is neccessary to draw on a COPY of the frame.
+			#If this do not happen the classifier works on the drawn frame, and it will learn the "user friendly draw" and not the frame itself
+			if self.streamOut is not None:
+				newFrame = frame.copy()
+				showDetections(newFrame, detections, 0, [(100, 100, 100)])
+				showDetections(newFrame, [leader], 0, [(255, 0, 0)])
+				self.__writeFPS(newFrame)
+				qPressed = self.streamOut.addFrame(newFrame)
 
-		return subjectPosition	#return the calculated position of the main subject
+		return (subjectPosition, qPressed)	#return the calculated position of the main subject
 
 
 	def __trackLeaderPhase(self, frame: "image") -> "point: tuple":
@@ -269,15 +286,16 @@ class Follower:
 		frame (Mat): The image to be processed
   
 		Returns: 
-		tuple: The coordinations of the center of the bounding box of the main subject.
+		tuple: The coordinations of the center of the bounding box of the main subject, eventually the default position: (-1, -1).
+		qPressed: A boolean value indicating if the user has pressed 'q' to end the tracker.
 		"""
 		subjectPosition = self.idlePosition
 		
 		#TRACK 
 		if self.loop%self.trackOverDetect != 0:
 			self.loop += 1
-			if self.showLog:
-				print("\nTracking...")
+			#if self.showLog:
+			#	print("\nTracking...")
 			(success, box) = self.tracker.update(frame)
 			# check to see if the tracking was a success
 			if success: 
@@ -292,8 +310,8 @@ class Follower:
 		#DETECT once every x frames
 		#todo: manage the case when the leader is classified as negative. how??? -> it's the weak point of this algorithm....
 		else:
-			if self.showLog:
-				print("\nDetecting...")
+			#if self.showLog:
+			#	print("\nDetecting...")
 
 			#recognise people into the image
 			detections = self.detector.detectPeopleOnly(frame)
@@ -307,7 +325,7 @@ class Follower:
 
 			#calc the drift radius tollerance according to the ratio, the period gone and the BB size
 			driftPeriod = int((datetime.datetime.now() - self.startDrifting).total_seconds() *1000)
-			driftRadius = int(driftPeriod*self.driftRatio*((self.lastW/100)**2) + self.driftTollerance) 
+			driftRadius = int(driftPeriod*self.driftRatio*((self.lastW/100)**3) + self.driftTollerance) 
 
 			#process each detection
 			for (i, (__classLabel, __prob, (x, y, w, h))) in enumerate(detections):
@@ -329,8 +347,8 @@ class Follower:
 					#	print("\n")
 
 				else:
-					if self.showLog:
-						print("Choice with KNN")
+					#if self.showLog:
+					#	print("Choice with KNN")
 					#add the featureVector to KNN as a point
 					label = self.knn.predict(featureVector, k=self.K)
 
@@ -352,17 +370,16 @@ class Follower:
 				if self.showLog:
 					print("More than one leader detected...")
 
-				#choose the closer leader, to the last known position, as the official one
-				bestI = -1
-				bestDist = None
+				#choose the closest leader, to the last known position, as the official one
+				distances = []
 				for i in leadersFound:
+					labels[i] = 0 #reset each suggested leader leabel (to 0)
 					_, _, (x, y, w, h) = detections[i]
 					dist = spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)) 
-					bestDist = dist if bestDist is None else min(bestDist, dist)
-					if dist==bestDist:
-						bestI = i
-				#remember the i relative to the lowest distance
-				leader = bestI
+					distances.append(dist)
+				leader = argmin(distances)
+				labels[i] = 1 #set the official leader label (to 1)
+
 
 			#for each person previously found (now identified by featureVector and label)
 			for (fv, l) in zip(features, labels):
@@ -380,7 +397,7 @@ class Follower:
 						print("FeatureVector added to negative")
 
 				#thanks to leader selection exist exactly one leader (loop enter here only once)
-				#test that this effectively happen only once (I'm not sure that labels is updated when the leader is found) -> more probably the loop entre more than once but the execution do not change...
+				#test that this effectively happen only once (I'm not sure that labels are updated when the leader is found) -> more probably the loop entre more than once but the execution do not change...
 				else:	 # 1=positive
 					_, _, (x, y, w, h) = detections[leader]
 				
@@ -400,19 +417,6 @@ class Follower:
 					if len(labels)==1:
 						self.__addOneNegativeToKNN()
 
-					#tmp: compute confidence distance from last tracked position to first detect position
-					#usefull to decide the right value of the "driftRatio" hyperparameter
-					#if self.showLog:
-					#	dist = spatial.distance.euclidean(self.lastKnownPosition, subjectPosition)
-
-					#	with open("imagesOut/confidenceDist.txt", 'a') as f:
-					#		f.write("{:.2f}".format(dist))
-					#		f.write("\t")
-					#		f.write(str(driftPeriod))	#elapsed millisec
-					#		f.write("\t")
-					#		f.write(str(int(w)))		#width of BB
-					#		f.write("\n")
-
 			
 			if self.streamOut is not None:
 				#NB: the draw on the frame MUST be done after the classifier has analised it, if not tests will be compromised
@@ -421,11 +425,12 @@ class Follower:
 				cv2.circle(frame, self.lastKnownPosition, 5, color=(0, 0, 0), thickness=2)
 	
 		#writing for both tracking and detetion
+		qPressed = False
 		if self.streamOut is not None:
 			self.__writeFPS(frame)
-			self.streamOut.addFrame(frame)
+			qPressed = self.streamOut.addFrame(frame)
 
-		return subjectPosition	#return the calculated position of the leader
+		return (subjectPosition, qPressed)	#return the calculated position of the leader
 
 	def __addOneNegativeToKNN(self) -> None:
 		""" Get a precomputed encoding to fill the KNN space in parallel with positive and negative samples. """
@@ -444,6 +449,14 @@ class Follower:
 def centerBB(x, y, w, h):
 	""" Compute the center of the bounding box given. """
 	return( (x+(w//2), y+(h//2)) )
+
+def argmax(array):
+    array = list(array)
+    return array.index(max(array))
+
+def argmin(array):
+    array = list(array)
+    return array.index(min(array))
 
 #def swapXY(p):
 #	""" Swap the first and second value of a tuple. """
