@@ -2,7 +2,6 @@
 from abc import ABC # ABC = Abstract Method Class
 import numpy as np
 import cv2
-import random #tmp
 
 ################################################################################################################
 ############################     Model Super Class        ######################################################
@@ -242,6 +241,13 @@ class ResNet50(Model):
 			
 	def blob(self, image) -> "blob":
 		#image = cv2.resize(image, (64, 128), interpolation = cv2.INTER_AREA) #not neccessary
+		#TODO: BUG found the execution crash here if yolo is set as detector
+		#print("AAAAAAAAAAA")
+		#if image is None:
+		#	print("NONENONENONE")
+		#print(image)
+		##cv2.imwrite(image, "wtf.jpg")
+		#print("BBBBBBBBBBB")
 		return cv2.dnn.blobFromImage(image=image, scalefactor=1, size=(224, 224), mean=(0.485, 0.456, 0.406))
 
 	def processDnnOutput(self, output, _1=None, _2=None, _3=None) -> "list":

@@ -101,7 +101,7 @@ class Follower:
 		self.setLogParam()		#deteails to save a log for the user and a later analysis
 
 		#main flow parameters
-		self.phase = 0			#which phase is running (0=slow start, 1=follow)
+		self.phase = 1			#which phase is running (1=slow start, 2=track leader)
 		self.loop = 0			#counter for switching from detection to tracker every x frames
 		self.startTime = None	#startTime to measure the lenght of the first phase
 
@@ -170,11 +170,11 @@ class Follower:
 	def follow(self) -> "point: tuple":
 		"""
 		The follow function grab a frame from the default source and then process it according to two phases:
-		- slowStart phase: the algorithms (KNN) lear how to recognise the main subject 
-		- follow phase: the algorithms with the accumulated knowledge, track the subject in realtime
+		- slowStart phase (1): the algorithm (KNN) lear how to recognise the main subject 
+		- follow phase (2): the algorithm with the accumulated knowledge, track the subject in realtime
 
 		Returns: 
-		tuple: The coordinations of the center of the bounding box of the main subject.
+		tuple: The coordinations of the centre of the bounding box of the main subject.
 		"""
 
 		#grab a frame from the input video/camera
@@ -183,7 +183,7 @@ class Follower:
 
 		if frame is not None:
 			#manage the slowStart phase (first k milliseconds)
-			if self.phase == 0:	#phase 0=slowStart
+			if self.phase == 1:	#phase 1=slowStart
 				if self.startTime is None:
 					#set the startup
 					self.startTime = datetime.datetime.now()
@@ -195,14 +195,14 @@ class Follower:
 					print("elapsed", elapsed/1000, "seconds")
 				#if it is the case perform change of phase
 				if elapsed > self.slowStartPhase:
-					self.phase = 1
+					self.phase = 2
 
-				#normal walkthrough of phase 0
+				#normal walkthrough of phase 1
 				detectedPosition = self.__slowStartPhase(frame)
 		
-			else: #phase 1=follow phase
-				#normal walkthrough of phase 1
-				detectedPosition = self.__followPhase(frame)
+			else: #phase 2=follow phase
+				#normal walkthrough of phase 2
+				detectedPosition = self.__trackLeaderPhase(frame)
 		
 		# update the last known position if it is not the idle one
 		if detectedPosition != self.idlePosition:
@@ -213,7 +213,7 @@ class Follower:
 
 	def __slowStartPhase(self, frame: "image") -> "point: tuple":
 		""" 
-		The slow start phase(0)  is the first phase when the algorithm will learn the main subject in the video.
+		The slow start phase (1) is the first phase when the algorithm will learn the main subject in the video.
 		Parameters: 
 		frame (Mat): The image to be processed
   
@@ -250,9 +250,9 @@ class Follower:
 				cv2.imwrite("".join([self.destImgs, str(self.random), ".jpg"]), box)
 
 		
-		#draw on the frame output for the user (with both the suggestions below)
-		#NB: it is fundamental to draw on the frame AFTER that the classifier has elaborated the frame itself, or in case of elaboration before is neccessary to draw on a COPY of the frame.
-		#If this do not happen the classifier works on a drawn frame, and it will learn the "user friendly draw" and not the frame
+		#draw on the frame output for the user (read both the suggestions below)
+		#NB: it is fundamental to draw on the frame AFTER that the classifier has elaborated the frame itself, or, in case of elaboration before, is neccessary to draw on a COPY of the frame.
+		#If this do not happen the classifier works on the drawn frame, and it will learn the "user friendly draw" and not the frame itself
 		if self.streamOut is not None:
 			newFrame = frame.copy()
 			showDetections(newFrame, detections, 0)
@@ -262,9 +262,9 @@ class Follower:
 		return subjectPosition	#return the calculated position of the main subject
 
 
-	def __followPhase(self, frame: "image") -> "point: tuple":
+	def __trackLeaderPhase(self, frame: "image") -> "point: tuple":
 		""" 
-		The follow phase(1) is the phase when the algorithm will follow based on his knowledge the main subject through the video.
+		The track leader phase(2) is the phase when the algorithm will track based on his knowledge the main subject through the video.
 		Parameters: 
 		frame (Mat): The image to be processed
   
@@ -380,6 +380,7 @@ class Follower:
 						print("FeatureVector added to negative")
 
 				#thanks to leader selection exist exactly one leader (loop enter here only once)
+				#test that this effectively happen only once (I'm not sure that labels is updated when the leader is found) -> more probably the loop entre more than once but the execution do not change...
 				else:	 # 1=positive
 					_, _, (x, y, w, h) = detections[leader]
 				

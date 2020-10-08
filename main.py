@@ -1,4 +1,5 @@
-# USAGE:
+# USAGE
+# --detector ssd --tracker csrt --classifier resNet50
 # python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/out --videoIn videosIn/shelfy_dataset/v01-basecase.mp4 --showLog --firstPhase 5000 --useGPU --imgsOut imagesOut/knnData/
 # python main.py --detector ssd --tracker csrt --classifier resNet50 --videoIn videosIn\shelfy_dataset\v04-simpleIntersection.mp4
 # python main.py --detector ssd --tracker csrt --classifier resNet50 --videoOut videosOut/webcam --firstPhase 10000 --imgsOut imagesOut/knnData/ --videoIn 0 --showLog
