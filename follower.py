@@ -340,11 +340,6 @@ class Follower:
 					label = 0
 					#if self.showLog:
 					#	print("\n\nDetection out of bound of drift radius. Set as negative")
-					#	print("driftRadius:", driftRadius)
-					#	print("drift: spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)):", drift)
-					#	print("self.lastKnownPosition:", self.lastKnownPosition)
-					#	print("centerBB(x, y, w, h):", centerBB(x, y, w, h))
-					#	print("\n")
 
 				else:
 					#if self.showLog:
@@ -360,25 +355,28 @@ class Follower:
 				labels.append(label)
 
 			# Manage the case of multiple leaders detected (only one can exist!)
-			leader = None
+			leaderIdx = None
+			leaderDetection = []
 			if len(leadersFound) == 0:
 				if self.showLog:
 					print("No leader detected...")
 			elif len(leadersFound) == 1:
-				leader = leadersFound[0]
+				leaderIdx = leadersFound[0]
 			else:
 				if self.showLog:
 					print("More than one leader detected...")
 
 				#choose the closest leader, to the last known position, as the official one
 				distances = []
-				for i in leadersFound:
-					labels[i] = 0 #reset each suggested leader leabel (to 0)
-					_, _, (x, y, w, h) = detections[i]
+				#leaders found is a collection of index of possible leaders
+				for idxOfLeaders in leadersFound:
+					labels[idxOfLeaders] = 0 #reset each suggested leader leabel (to 0)
+					_, _, (x, y, w, h) = detections[idxOfLeaders]
 					dist = spatial.distance.euclidean(self.lastKnownPosition, centerBB(x, y, w, h)) 
 					distances.append(dist)
-				leader = argmin(distances)
-				labels[i] = 1 #set the official leader label (to 1)
+
+				leaderIdx = leadersFound[argmin(distances)]
+				labels[leaderIdx] = 1 #set the official leader label (to 1)
 
 
 			#for each person previously found (now identified by featureVector and label)
@@ -396,31 +394,32 @@ class Follower:
 					if self.showLog:
 						print("FeatureVector added to negative")
 
-				#thanks to leader selection exist exactly one leader (loop enter here only once)
-				#test that this effectively happen only once (I'm not sure that labels are updated when the leader is found) -> more probably the loop entre more than once but the execution do not change...
-				else:	 # 1=positive
-					_, _, (x, y, w, h) = detections[leader]
+			#thanks to leader selection exists exactly one leader
+			if leaderIdx is not None:	 # AKA exists a leader
+				leaderDetection = [detections.pop(leaderIdx)]
+				_, _, (x, y, w, h) = leaderDetection[0]
 				
-					#leader found: next frame will be used for tracking
-					self.loop = 1
-					self.startDrifting = datetime.datetime.now()
-					# reinitialize the tracker. A simple initialization is not sufficient it need to be re-istantiated
-					self.tracker = None
-					self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
-					self.tracker.init(frame, (x, y, w, h))
+				#leader found: next frame will be used for tracking
+				self.loop = 1
+				self.startDrifting = datetime.datetime.now()
+				# reinitialize the tracker. A simple initialization is not sufficient it need to be re-istantiated
+				self.tracker = None
+				self.tracker = self.OBJECT_TRACKERS[self.trackerName]()
+				self.tracker.init(frame, (x, y, w, h))
 
-					# compute subject position
-					subjectPosition = centerBB(x, y, w, h)
+				# compute subject position
+				subjectPosition = centerBB(x, y, w, h)
 
-					# add one precomputed negative sample to KNN, because only the leader exist. 
-					# the goal is to balance positive and negative.
-					if len(labels)==1:
-						self.__addOneNegativeToKNN()
+				# add one precomputed negative sample to KNN, because only the leader exist. 
+				# the goal is to balance positive and negative.
+				if len(labels)==1:
+					self.__addOneNegativeToKNN()
 
 			
 			if self.streamOut is not None:
 				#NB: the draw on the frame MUST be done after the classifier has analised it, if not tests will be compromised
-				showDetections(frame, detections, 0, colors)
+				showDetections(frame, detections, 0, [(0, 0, 255)])		#set the wrong people with red
+				showDetections(frame, leaderDetection, 0, [(0, 255, 0)])#set the leader with green
 				cv2.circle(frame, self.lastKnownPosition, driftRadius, color=(0, 255, 255), thickness=1)
 				cv2.circle(frame, self.lastKnownPosition, 5, color=(0, 0, 0), thickness=2)
 	
