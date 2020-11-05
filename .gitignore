@@ -4,6 +4,4 @@ videosOut/
 imagesIn/
 imagesOut/
 models/
-
-#the partial encodings file
-encodings/*-n*	
+encodings/

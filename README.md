@@ -7,8 +7,11 @@ The goal of this code is to allow a robot equipped with an RGB camera to detect,
 ### Necessary  material
 The repository contains only the code but the entire project to work requires additional elements:
 - The DNN (Deep Neural Network) [pre-trained models](https://drive.google.com/drive/folders/1NIsFhys1TO4IEbt0ZBErVAGFfm2TB14L?usp=sharing).
-- Optionally, the [database of images](https://drive.google.com/drive/folders/1UG_BCHDNZywuIp5mIVAFgByNDbOBzKWA?usp=sharing) internally used as samples when there are no people in the field of view of the robot.
-- Optionally, a [set of input samples](https://drive.google.com/drive/folders/1v_NtzNaYFYeP-5k7Mzwyy3rw1KzmDXAI?usp=sharing) recorded to test the potentialities of the software.
+- The [pre-computed encodings](https://drive.google.com/drive/folders/17UaRxobv3ESAeaWWYVSJQzaXXCK4aq4a?usp=sharing) of the database of images of people.
+
+And, **optionally** also:
+- The [database of images](https://drive.google.com/drive/folders/1UG_BCHDNZywuIp5mIVAFgByNDbOBzKWA?usp=sharing) internally used as samples when there are no people in the field of view of the robot.
+- A [set of input samples](https://drive.google.com/drive/folders/1v_NtzNaYFYeP-5k7Mzwyy3rw1KzmDXAI?usp=sharing) recorded to test the potentialities of the software.
 
 These folders should be placed in the root location of the project.
 
