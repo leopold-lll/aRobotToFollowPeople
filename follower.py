@@ -4,7 +4,7 @@ import cv2
 
 from utils.loadVideo import LoadVideo
 from utils.storeVideo import StoreVideo
-from utils.model import ResNet50, GoogleNet	#imgClassification
+from utils.model import ResNet50, GoogleNet		#imgClassification
 from utils.model import YOLOv3, MobileNetSSD	#objDetection
 from utils.dataset import DatabaseOfEncodings	#preComputed-imgEncodings
 from utils.knn import MyKNN
@@ -325,7 +325,7 @@ class Follower:
 
 			#calc the drift radius tollerance according to the ratio, the period gone and the BB size
 			driftPeriod = int((datetime.datetime.now() - self.startDrifting).total_seconds() *1000)
-			driftRadius = int(driftPeriod*self.driftRatio*((self.lastW/100)**3) + self.driftTollerance) 
+			driftRadius = int(driftPeriod*self.driftRatio*((self.lastW/100)**2) + self.driftTollerance) 
 
 			#process each detection
 			for (i, (__classLabel, __prob, (x, y, w, h))) in enumerate(detections):
