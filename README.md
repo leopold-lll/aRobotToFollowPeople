@@ -17,8 +17,7 @@ These folders should be placed in the root location of the project.
 
 ### References
 A quick and complete view of the project can be done with the use of:
-- A [demo](https://drive.google.com/file/d/1s_sXa-Q7-MVhQVobPWRdU7K5oFsKyt4N/view?usp=sharing) of the working software executed on an Intel Core i5 CPU.
+- A [demo](https://drive.google.com/file/d/1ZUzWgMI3whJ396Bqj9yCCbyXszScmoQm/view?usp=sharing) of the working software executed on an Intel Core i5 CPU.
 - The [final dissertation](https://github.com/leopold-lll/thesis_aRobotToFollowPeople/blob/master/main.pdf) containing all the details and the implemental choices that have been done.
 The dissertation is titled: *"Integration of multiple deep learning algorithms for real-time tracking of a person in complex scenarios"*.
-- The powerpoint [presentation](https://drive.google.com/file/d/1jJQ9YGHTVK5UrLhepHpZLqO4kwQCIXDb/view?usp=sharing) of the overall project.
-- The [recorded oral discussion](https://drive.google.com/file/d/1vLVMeXBxDt49J976ht0A8TKUEt3Bqjcf/view?usp=sharing) of the presentation.
+- The [recorded oral discussion](https://drive.google.com/file/d/1z39Vw4vZ-KBAWhoOfBoNPYHigpi-ycAg/view?usp=sharing) of the presentation.
